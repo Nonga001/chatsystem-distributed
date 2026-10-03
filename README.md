@@ -1,349 +1,184 @@
 # Java TCP Chat System
 
-A multi-client, client-server chat application built in Java using TCP socket programming. The system demonstrates network communication, concurrent client handling, thread-based message processing, and shared client state management.
+A clean, lightweight multi-client chat application built in Java using TCP socket programming. The system demonstrates fundamental networking concepts, concurrent client handling, thread-based message processing, and shared client state management.
 
 ## Overview
 
-This project implements a simple real-time chat system using a **client-server architecture**.
+This project implements a real-time chat system using a **client-server architecture**.
 
-A central Java server listens for TCP connections from multiple clients. Each connected client is handled independently using a dedicated thread, allowing multiple users to communicate concurrently. Messages received by the server are broadcast to the connected clients.
+A central Java server listens for TCP socket connections from multiple clients. Each connected client is handled independently using a dedicated worker thread, enabling multiple users to communicate concurrently. Messages received by the server are broadcast in real time to all connected clients.
 
-The project was built to explore practical concepts in **Java networking, socket programming, concurrency, exception handling, and client-server communication**.
+The project demonstrates practical concepts in **Java networking, socket programming, concurrency, input/output stream management, and client-server communication**.
 
 ## Features
 
-* TCP-based client-server communication
-* Multiple simultaneous client connections
-* Unique nicknames for connected users
-* Real-time message broadcasting
-* Dedicated server thread for each connected client
-* Separate client thread for receiving incoming messages
-* Join and leave notifications
-* Graceful client disconnection using `bye`
-* Concurrent management of connected clients
-* Basic error handling for network and I/O failures
+* **TCP Client-Server Communication**: Reliable connection-oriented networking using Java Sockets.
+* **Concurrent Client Handling**: Dedicated server thread for each connected client connection.
+* **Unique Nicknames**: Prompt-based client identification upon connection.
+* **Real-Time Message Broadcasting**: Distributes messages from any client to all active participants.
+* **Asynchronous Client Listener**: Client uses a separate thread to receive and display incoming messages without blocking user input.
+* **Connection Lifecycle Notifications**: Automatic broadcasting of user join and leave notifications.
+* **Graceful Disconnection**: Client connection teardown triggered by typing `bye`.
+* **Thread-Safe Client Tracking**: Uses `ConcurrentHashMap` to safely manage active client writers across threads.
 
 ## Architecture
 
-The application follows a simple client-server architecture:
+The system follows a standard multithreaded client-server architecture:
 
 ```text
-                    ┌─────────────────┐
-                    │   Java Server   │
-                    │   TCP : 1234    │
-                    └────────┬────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-        ┌──────────┐   ┌──────────┐   ┌──────────┐
-        │ Client 1 │   │ Client 2 │   │ Client 3 │
-        └──────────┘   └──────────┘   └──────────┘
+Client 1 ─┐
+Client 2 ─┼──> Java TCP Server (Port 1234) ──> Connected Clients
+Client 3 ─┘
 ```
 
-Each client establishes a TCP connection to the server.
-
-The server creates a dedicated `ClientHandler` thread for each connection. Connected clients are tracked using a thread-safe `ConcurrentHashMap`, allowing the server to broadcast messages to active users.
-
-## How It Works
-
-### 1. Server Startup
-
-The server creates a `ServerSocket` and listens on TCP port `1234`.
-
-```java
-ServerSocket serverSocket = new ServerSocket(PORT);
-```
-
-It continuously waits for incoming client connections.
-
-### 2. Client Connection
-
-A client connects to the server using the server address and port:
-
-```java
-Socket socket = new Socket(serverAddress, PORT);
-```
-
-The client then provides a nickname to identify itself in the chat.
-
-### 3. Concurrent Client Handling
-
-For every new connection, the server creates a dedicated `ClientHandler` and starts it in a separate thread.
-
-```java
-ClientHandler clientHandler = new ClientHandler(socket);
-new Thread(clientHandler).start();
-```
-
-This allows multiple clients to communicate with the server concurrently.
-
-### 4. Message Broadcasting
-
-When a client sends a message, the server receives it through the client's input stream and broadcasts it to all currently connected clients.
-
-The server maintains connected clients using:
-
-```java
-ConcurrentMap<PrintWriter, String> clientWriters
-```
-
-The concurrent collection helps safely manage shared client state while multiple client-handler threads are active.
-
-### 5. Client-Side Message Handling
-
-The client uses a separate thread to listen for incoming messages.
-
-This allows the user to continue entering messages while messages from other users are received asynchronously.
+### Flow Breakdown
 
 ```text
-Main Thread
-    │
-    ├── Read user input
-    └── Send messages
-
-Message Listener Thread
-    │
-    └── Receive and display messages
+┌──────────┐              ┌──────────────┐              ┌──────────────────┐
+│  Client  │ ──(Connect)─>│ ServerSocket │ ──(Accept)──>│  ClientHandler   │
+└──────────┘              └──────────────┘              │     (Thread)     │
+     │                                                  └────────┬─────────┘
+     │                                                           │
+     ├────── Send Nickname ─────────────────────────────────────>│ (Registers Client)
+     │                                                           │
+     ├────── Send Message ──────────────────────────────────────>│ (Broadcasts to all)
+     │                                                           │
+     └────── Send 'bye' ────────────────────────────────────────>│ (Cleans up & closes)
 ```
 
-### 6. Disconnecting
-
-A client can leave the chat by sending:
-
-```text
-bye
-```
-
-The server removes the client's connection from the active client collection and notifies the remaining users that the client has left.
+1. **Server Initialization**: `Server` creates a `ServerSocket` bound to TCP port `1234` and listens for incoming connections in a loop.
+2. **Connection Acceptance**: When a client connects, the server accepts the socket and spawns a `ClientHandler` runnable on a new `Thread`.
+3. **Registration & Join Broadcast**: The `ClientHandler` prompts the client for a nickname, adds the client's `PrintWriter` to a shared `ConcurrentHashMap`, and broadcasts a join notification.
+4. **Message Loop & Broadcasting**: The handler reads incoming lines from the client. Each message is printed to the server console and broadcast to all active `PrintWriter` streams.
+5. **Asynchronous Client Reading**: On the client side, a dedicated `messageListener` thread continuously reads from the server input stream while the main thread handles user console input.
+6. **Graceful Exit**: When a client sends `bye` (or closes the stream), the server broadcasts a leave notification, removes the client from `ConcurrentHashMap`, and closes the socket.
 
 ## Project Structure
 
 ```text
 chatsystem-distributed/
-│
-├── Client.java
-├── Server.java
-└── README.md
+├── src/
+│   ├── Client.java     # TCP Client implementation with asynchronous message listener
+│   └── Server.java     # TCP Server & concurrent ClientHandler implementation
+├── .gitignore          # Excludes compiled binaries, IDE configs, logs, and OS files
+└── README.md           # Project documentation
 ```
 
-### `Server.java`
+### `src/Server.java`
 
-Responsible for:
+* **`Server`**: Starts the `ServerSocket` on port `1234` and accepts client connections in an infinite loop.
+* **`ClientHandler`**: A `Runnable` class executed in a separate thread per client connection. Manages stream initialization, nickname registration, message reading, broadcasting across all connected clients via `ConcurrentHashMap`, and socket cleanup.
 
-* Starting the TCP server
-* Accepting client connections
-* Creating client-handler threads
-* Managing connected clients
-* Receiving client messages
-* Broadcasting messages
-* Handling client disconnections
+### `src/Client.java`
 
-### `Client.java`
+* **`Client`**: Connects to the server on port `1234`. Prompts the user for a nickname, launches a background thread to listen for incoming server messages, and processes user console input to send messages until `bye` is entered.
 
-Responsible for:
+## Technologies Used
 
-* Connecting to the server
-* Sending the user's nickname
-* Sending messages
-* Receiving messages
-* Displaying incoming messages
-* Closing the connection when the user exits
+* **Language**: Java (JDK 8+)
+* **Networking Protocol**: TCP/IP
+* **Networking API**: Java Sockets (`java.net.ServerSocket`, `java.net.Socket`)
+* **Concurrency**: Java Threads (`java.lang.Thread`), Thread-safe collections (`java.util.concurrent.ConcurrentHashMap`)
+* **I/O Streams**: Java Standard I/O (`java.io.BufferedReader`, `java.io.PrintWriter`, `java.io.InputStreamReader`)
+* **Version Control**: Git / GitHub
 
-## Requirements
+## How to Run
 
-* Java Development Kit (JDK) 8 or later
-* Terminal or command prompt
-* Network access between the client and server if running on different machines
+### Prerequisites
 
-Check your Java installation:
+* Java Development Kit (JDK 8 or later) installed and available on your system path.
+
+Verify Java installation:
 
 ```bash
 java -version
 javac -version
 ```
 
-## Running the Application
-
-### 1. Clone the repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Nonga001/chatsystem-distributed.git
 cd chatsystem-distributed
 ```
 
-### 2. Compile the source files
+### 2. Compile the Project
+
+Compile the Java source files from `src/` into an `out/` directory:
 
 ```bash
-javac Server.java Client.java
+javac -d out src/*.java
 ```
 
-This generates the required `.class` files locally.
+### 3. Start the Server
 
-### 3. Start the server
+Run the compiled `Server` class from the `out/` directory:
 
 ```bash
-java Server
+java -cp out Server
 ```
 
-The server will listen on:
-
-```text
-Port: 1234
-```
-
-You should see:
+Expected server output:
 
 ```text
 Server is listening on port 1234...
 ```
 
-### 4. Start a client
+### 4. Start a Client
 
-Open another terminal:
-
-```bash
-java Client localhost
-```
-
-Enter a nickname when prompted.
-
-### 5. Start additional clients
-
-Open additional terminals and run:
+Open a new terminal window and run:
 
 ```bash
-java Client localhost
+java -cp out Client localhost
 ```
 
-Each client can then communicate through the server.
+*(Replace `localhost` with the server's IP address if connecting over a local network.)*
 
-## Example
+### 5. Start Additional Clients
 
-Client 1:
+Open additional terminal windows and launch more clients:
 
-```text
-Enter your nickname:
-Alice
-
-You: Hello everyone!
+```bash
+java -cp out Client localhost
 ```
 
-Client 2 receives:
-
-```text
-Alice has joined the chat.
-Alice: Hello everyone!
-```
-
-Another client can respond:
-
-```text
-You: Hi Alice!
-```
-
-The server broadcasts the message to the connected clients.
+Each client will prompt for a nickname and join the shared chat session. Type `bye` to exit.
 
 ## Technical Concepts Demonstrated
 
-This project demonstrates several fundamental software-engineering and networking concepts:
+* **TCP Socket Programming**: Establishing reliable, connection-oriented communication between client and server endpoints.
+* **Client-Server Architecture**: Centralized server coordinating communication and state among distributed clients.
+* **Multithreading**: Spawning independent execution threads on both server (per-client handler) and client (message listener) to prevent blocking I/O operations.
+* **Thread Safety & Concurrency Control**: Utilizing `ConcurrentHashMap` to allow safe, thread-safe access and mutation of active client connection references across concurrent threads.
+* **I/O Stream Handling**: Wrapping byte streams with character streams (`BufferedReader`, `PrintWriter`) for efficient line-based text processing.
+* **Resource Management**: Utilizing try-with-resources and explicit `finally` cleanup blocks to properly release sockets and streams upon disconnection.
+* **Exception Handling**: Handling `IOException` gracefully to ensure socket teardown without server crashes.
 
-### Java Networking
+## Limitations
 
-Uses Java's networking APIs including:
+This repository is designed as a foundational networking and concurrency project. It currently has the following scope limitations:
 
-* `ServerSocket`
-* `Socket`
-* `InputStream`
-* `OutputStream`
-* `BufferedReader`
-* `PrintWriter`
+* **No Authentication**: Clients are identified solely by self-reported nicknames without password verification.
+* **No Encryption / Security**: Transmission is unencrypted plain text over standard TCP sockets (no TLS/SSL).
+* **No Persistence**: Chat history is transient and not stored in a database or file system.
+* **No Private Messaging / Rooms**: All messages are broadcast to every connected client globally.
+* **No Command Protocol**: Lacks structured command routing (e.g., JSON or binary framing).
+* **Thread-per-Client Scaling Limit**: Uses basic thread creation per client rather than a thread pool (`ExecutorService`) or non-blocking I/O (`java.nio`).
 
-### TCP Communication
+## Future Improvements
 
-The application uses TCP to establish reliable communication between clients and the server.
-
-### Concurrency
-
-The server creates a separate thread for each connected client, while the client uses a separate listener thread for incoming messages.
-
-### Thread-Safe Shared State
-
-Connected clients are stored using `ConcurrentHashMap`, allowing concurrent client handlers to access and update shared state.
-
-### Exception Handling
-
-Network and I/O operations are wrapped with exception handling to prevent failures from terminating the application unexpectedly.
-
-### Resource Management
-
-Sockets and streams are managed using Java's try-with-resources mechanism where appropriate, helping ensure resources are closed correctly.
-
-## Design Considerations
-
-### Why TCP?
-
-TCP provides reliable, ordered, connection-oriented communication, which makes it suitable for a basic chat application where messages should arrive reliably.
-
-### Why Multiple Threads?
-
-A blocking socket operation can wait indefinitely for network input. Dedicated threads allow the server to continue accepting and servicing other clients while one client is waiting for input.
-
-### Why `ConcurrentHashMap`?
-
-The server can have multiple `ClientHandler` threads accessing the connected-client collection simultaneously. A concurrent collection helps avoid unsafe concurrent modifications to shared state.
-
-## Current Limitations
-
-This is an educational networking project and intentionally keeps the architecture simple.
-
-Current limitations include:
-
-* No user authentication
-* No message persistence
-* No encryption
-* No database integration
-* No message history
-* No advanced room management
-* Server state is lost when the server stops
-* No automatic client reconnection
-* No graphical user interface
-
-## Possible Improvements
-
-Future versions could introduce:
-
-* User authentication and authorization
-* TLS encryption for network communication
-* Persistent message storage using a relational database
-* Chat rooms and private messaging
-* Client reconnection handling
-* Message timestamps
-* Structured message formats such as JSON
-* Logging and monitoring
-* Automated unit and integration tests
-* Executor-based thread management
-* A graphical or web-based client
-
-## Learning Outcomes
-
-Through this project, I gained practical experience with:
-
-* Java socket programming
-* TCP/IP client-server communication
-* Multithreaded programming
-* Concurrent data structures
-* Network I/O
-* Exception handling
-* Resource management
-* Git-based software development
-* Debugging distributed client-server behaviour
+* **TLS/SSL Encryption**: Secure socket communication using `SSLSocket` and `SSLServerSocket`.
+* **User Authentication**: Implement registration and login with secure password hashing.
+* **Message Persistence**: Store messages in a database (e.g., PostgreSQL or SQLite) for message history retrieval.
+* **Private Messaging & Chat Rooms**: Add support for targeted user messaging and topic-based channels.
+* **Thread Pooling / NIO**: Use `ExecutorService` or Java NIO (`Selectors`) for improved scalability under high connection loads.
+* **Graphical User Interface**: Develop a desktop GUI (JavaFX / Swing) or web interface.
+* **Structured Protocol**: Adopt JSON framing or Protocol Buffers for message payload serialization.
 
 ## Author
 
-**Shaldon Omondi Nonga**
+**Shaldon Omondi Nonga**  
+BSc Computer Science  
+Dedan Kimathi University of Technology  
 
-BSc Computer Science
-Dedan Kimathi University of Technology
-
-GitHub: https://github.com/Nonga001
+GitHub: [https://github.com/Nonga001](https://github.com/Nonga001)
